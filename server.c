@@ -12,27 +12,27 @@
 
 int clientNum = 0;
 struct client {
-    int sockID;
+    int cfd;
     struct sockaddr_in clientAddr;
     char name[32];
-    int clientID;
+    int id;
     int len;
 
 };
 
-struct client Client[1024];
+struct client client[1024];
 pthread_t thread[1024];
 
 //Watek dla kazdego zalogowanego uzytkownika
-void *clientHandler(void *ClientDetail) {
+void *cthread(void *ClientDetail) {
 
     struct client *clientDetail = (struct client *) ClientDetail;
     char username[32];
     strncpy(username, clientDetail->name, 32);
-    int clientID = clientDetail->clientID;
-    int clientSocket = clientDetail->sockID;
+    int id = clientDetail->id;
+    int clientSocket = clientDetail->cfd;
 
-    printf("Client %d connected.\n", clientID + 1);
+    printf("Client %d connected.\n", id + 1);
 
     while (1) {
 
@@ -56,12 +56,12 @@ void *clientHandler(void *ClientDetail) {
 
             //sprawdz czy uzytkownik jest dostepny
             for (int i = 0; i < clientNum; i++) {
-                if (strcmp(recipent, Client[i].name) == 0) {
-                    if (Client[i].sockID != 0) logged = i + 1;
+                if (strcmp(recipent, client[i].name) == 0) {
+                    if (client[i].cfd != 0) logged = i + 1;
                 }
             }
             if (logged > 0) {
-                send(Client[logged - 1].sockID, datarest, strlen(datarest), 0);
+                send(client[logged - 1].cfd, datarest, strlen(datarest), 0);
             } else {
                 //zapis wiadomosci dla uzytkownika offline
                 char loc[128] = "./serverData/";
@@ -76,12 +76,12 @@ void *clientHandler(void *ClientDetail) {
         //Login
         if (strcmp(command, "LOGIN") == 0) {
             printf("User %s online\n", datarest);
-            strncpy(Client[clientID].name, datarest, 32);
+            strncpy(client[id].name, datarest, 32);
 
             //Sprawdz czy uzytkownik nie ma zadnych nieprzeczytanych wiadomosci
             char loc[128] = "./serverData/";
             char owner[32];
-            strcpy(owner, Client[clientID].name);
+            strcpy(owner, client[id].name);
             strcat(loc, owner); //plik z nieodebranymi wiadomosciami
 
             char line[1024];
@@ -96,7 +96,7 @@ void *clientHandler(void *ClientDetail) {
                 strcpy(line, "");
                 strcat(line, line_buf);
 
-                send(Client[clientID].sockID, line, strlen(line), 0);
+                send(client[id].cfd, line, strlen(line), 0);
                 line_size = getline(&line_buf, &line_buf_size, file);
                 usleep(500000); //sleep 0.5s - poprawa plynnosci
             }
@@ -106,16 +106,16 @@ void *clientHandler(void *ClientDetail) {
         }
         //Wylogowanie z systemu, oznaczenie uzytkownika jako offline
         if (strcmp(command, "DEAD") == 0) {
-            close(Client[clientID].sockID);
-            Client[clientID].sockID = 0;
-            printf("User %s disconnected\n", Client[clientID].name);
+            close(client[id].cfd);
+            client[id].cfd = 0;
+            printf("User %s disconnected\n", client[id].name);
             sleep(500000);
             break;
         }
 
     }
 
-    pthread_join(thread[clientID], NULL);
+    pthread_join(thread[id], NULL);
     return NULL;
 
 }
@@ -127,13 +127,13 @@ int main(void) {
     struct sockaddr_in serverAddr;
 
     serverAddr.sin_family = AF_INET;
-    serverAddr.sin_port = htons(8011);
+    serverAddr.sin_port = htons(1234);
     serverAddr.sin_addr.s_addr = htons(INADDR_ANY);
     if (bind(serverSocket, (struct sockaddr *) &serverAddr, sizeof(serverAddr)) == -1) return 0;
     //listen
     if (listen(serverSocket, 1024) == -1) return 0;
 
-    printf("Server is up on port 8011\n");
+    printf("Server is up\n");
 
     //Utworz folder w celu rejestrowania wiadomosci
     struct stat st = {0};
@@ -143,10 +143,10 @@ int main(void) {
     }
     //Tworzenie nowych watkow
     while (1) {
-        unsigned int c = Client[clientNum].len;
-        Client[clientNum].sockID = accept(serverSocket, (struct sockaddr *) &Client[clientNum].clientAddr, &c);
-        Client[clientNum].clientID = clientNum;
-        pthread_create(&thread[clientNum], NULL, clientHandler, (void *) &Client[clientNum]);
+        unsigned int c = client[clientNum].len;
+        client[clientNum].cfd = accept(serverSocket, (struct sockaddr *) &client[clientNum].clientAddr, &c);
+        client[clientNum].id = clientNum;
+        pthread_create(&thread[clientNum], NULL, cthread, (void *) &client[clientNum]);
         clientNum++;
 
     }
